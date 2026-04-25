@@ -17,14 +17,14 @@ import signal
 import csv
 import threading
 import os
-
+from zoneinfo import ZoneInfo
 # ========== 配置==========
 # 经纬度配置
 LATITUDE = "43.85"                        # 纬度
 LONGITUDE = "125.41"                      # 经度
 LOCATION = f"{LONGITUDE},{LATITUDE}"
 
-INTERVAL = 1800  # 采集间隔（秒）
+INTERVAL = 3600  # 采集间隔（秒）
 
 # 和风天气API接口
 API_HOST = "https://kw3v5an2q7.re.qweatherapi.com"
@@ -44,7 +44,7 @@ headers = {"X-QW-Api-Key": API_KEY}
 Data_DIR = "weather_data"  # 文件目录
 os.makedirs(Data_DIR, exist_ok=True)# 确保目录存在
 DB_FILENAME = "weather_data.db"      # SQLite数据库文件路径
-CSV_FILENAME = "weather_records.csv"  # CSV文件名（按日期分文件可修改）
+CSV_FILENAME = "weather_records260425.csv"  # CSV文件名（按日期分文件可修改）
 LOG_FILENAME = "weather_fetcher.log"  # CSV文件名（按日期分文件可修改）
 DB_PATH=os.path.join(Data_DIR, DB_FILENAME)
 csv_path = os.path.join(Data_DIR, CSV_FILENAME)
@@ -122,9 +122,13 @@ def fetch_weather():
             logging.info(f"获取成功 - 天气: {now.get('text')}，温度: {now.get('temp')}°C")
             # logging.info(f"数据页面 - :{data.get('fxLink')}")
 
+            # 转换时区
+            cst_time = (datetime.fromisoformat(now.get("obsTime"))).astimezone(ZoneInfo("Asia/Shanghai"))
+
             return {
                 "text": now.get("text"),#天气描述
-                "obsTime": now.get("obsTime"),
+                # "obsTime":datetime.fromisoformat((now.get("obsTime")).replace('+00:00', '')) + timedelta(hours=8),
+                "obsTime":cst_time.isoformat(),
                 "temp": now.get("temp"),
                 "feels_like": now.get("feelsLike"),
                 "humidity": now.get("humidity"),
@@ -320,7 +324,7 @@ def save_to_csv(weather_data, air_quality_data):
 
 # ========== 导出为CSV ==========此程序未完成
 def export_to_csv():
-    """手动调用时导出数据到CSV文件（覆盖模式）"""
+    #手动调用时导出数据到CSV文件（覆盖模式）
 
     os.makedirs(Data_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -367,14 +371,14 @@ signal.signal(signal.SIGTERM, signal_handler)  # 终止信号
 
 # ========== 主循环 ==========
 def main():
-    logging.info(f"天气采集程序启动，采集间隔:{(INTERVAL % 3600) // 60}分钟）")
+    logging.info(f"程序启动，采集间隔:{INTERVAL // 3600}时{(INTERVAL % 3600) // 60}分")
     init_db()
 
     # 循环采集
     while not stop_event.is_set():
         # 获取数据
         data_time = datetime.now().replace(microsecond=0)
-        logging.info(f"获取天气数据 - 时间: {data_time}")
+        logging.info(f"获取天气数据 - 执行时间: {data_time}")
         weather_data = fetch_weather()
         air_quality_data= fetch_air_quality()
         # 保存文件
