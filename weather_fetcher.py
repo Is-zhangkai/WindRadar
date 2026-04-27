@@ -74,6 +74,7 @@ def init_db():
     """创建SQLite数据表（如果不存在）"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA auto_vacuum = FULL")
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS weather_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

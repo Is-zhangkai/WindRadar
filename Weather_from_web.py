@@ -7,6 +7,9 @@
 @Date           ：2026/4/25 17:22 
 @Version        : 1.0.0
 @Description    : 从动态网页抓取信息
+@Record         :260425--从动态网页抓取信息
+                 260427--获取数据量较大，保存原始数据时只保留有用数据，增加删除数据库列函数2个
+
 """
 
 import requests
@@ -61,6 +64,7 @@ def init_db():
     """创建SQLite数据表（如果不存在）"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
+    cursor.execute("PRAGMA auto_vacuum = FULL")
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS weather_records (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -124,7 +128,7 @@ def fetch_all_data():
             "wind_scale": actual.get("windlevel"),             # 风力等级
             "pressure": actual.get("pressure"),                # 气压
             "visibility": actual.get("visibility"),            # 能见度
-            "raw_response": str(data)                          # 原始数据
+            # "raw_response": str(data)                          # 原始数据
         }
 
         # 2. 空气质量数据
@@ -136,9 +140,19 @@ def fetch_all_data():
             "o3": aqi_data.get("o3"),           # 臭氧
             "co": aqi_data.get("co"),           # 一氧化碳
         }
+        # 3. 精简的原始响应（只保留 actual 和 aqi，cityInfo）
+        raw = {
+            "code": data.get("code"),
+            "data": {
+                "actual": actual,
+                "aqi": aqi_data,
+                "cityInfo": result.get("cityInfo", {})
+                # 不包含 aqiTop, days, hourAqi, indexList, todayInfo 等
+            }
+        }
+        weather_info["raw_response"] = str(raw)  # 或者使用 json.dumps
 
         logging.info(f"获取成功 - 温度: {weather_info['temp']}°C, 天气: {weather_info['text']}, AQI: {air_quality_info['aqi']}")
-
         return weather_info, air_quality_info
 
     except requests.exceptions.RequestException as e:
@@ -229,7 +243,7 @@ def save_to_csv(weather_data, air_quality_data):
     row = {
         "获取时间": datetime.now().isoformat(),
         "天气状况": weather.get("text"),
-        "天气数据更新时间": weather.get("obsTime"),
+        "数据更新时间": weather.get("obsTime"),
         "气温": safe_float(weather.get("temp")),
         "体感温度": safe_float(weather.get("feels_like")),
         "湿度": safe_float(weather.get("humidity")),
@@ -297,6 +311,55 @@ def export_to_csv():
     else:
         logging.warning("数据库无数据，无法导出")
 
+# ========== 删除raw_response字段的数据(不保留数据) ==========
+def clear_raw_response_columns():
+    """清空 raw_response字段的数据"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # 将两列的值全部设为 NULL
+    cursor.execute("UPDATE weather_records SET raw_response = NULL")
+
+    conn.commit()
+    conn.close()
+    logging.info("已清空 raw_response 字段的数据")
+
+# ========== 删除raw_response字段的数据(保留最后n行) ==========
+def keep_recent_raw_response(n=100):
+    """只保留最后 n 条记录的 raw_response，其余设为 NULL"""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    # 获取总记录数
+    cursor.execute("SELECT COUNT(*) FROM weather_records")
+    total = cursor.fetchone()[0]
+    if total <= n:
+        logging.info(f"总记录数({total})不超过保留数({n})，无需清理")
+        conn.close()
+        return
+    # 计算需要清理的记录数
+    keep_count = n
+    delete_count = total - n
+
+    # 方法：找到需要保留的最小 id
+    cursor.execute(f'''
+        SELECT id FROM weather_records 
+        ORDER BY id DESC 
+        LIMIT 1 OFFSET {keep_count - 1}
+    ''')
+    result = cursor.fetchone()
+    if result:
+        min_keep_id = result[0]
+        # 将 id < min_keep_id 的记录的 raw_response 设为 NULL
+        cursor.execute('''
+                       UPDATE weather_records
+                       SET raw_response = NULL
+                       WHERE id < ?
+                       ''', (min_keep_id,))
+        conn.commit()
+        logging.info(f"已清理 {delete_count} 条旧记录的 raw_response，仅保留最近 {keep_count} 条")
+    else:
+        logging.warning("无法确定保留范围")
+    conn.close()
 
 # ========== 退出处理 ==========
 stop_event = threading.Event()
@@ -338,3 +401,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # clear_raw_response_columns()
