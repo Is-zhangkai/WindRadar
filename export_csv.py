@@ -22,17 +22,17 @@ Data_DIR = "weather_data"  # 文件目录
 os.makedirs(Data_DIR, exist_ok=True)# 确保目录存在
 DB_FILENAME = "weather_data.db"      # SQLite数据库文件路径
 CSV_FILENAME = "weather_records.csv"  # CSV文件名（按日期分文件可修改）
-LOG_FILENAME = "weather_fetcher.log"  # CSV文件名（按日期分文件可修改）
+# LOG_FILENAME = "weather_fetcher.log"  # CSV文件名（按日期分文件可修改）
 DB_PATH=os.path.join(Data_DIR, DB_FILENAME)
 csv_path = os.path.join(Data_DIR, CSV_FILENAME)
-log_path = os.path.join(Data_DIR, LOG_FILENAME)
+# log_path = os.path.join(Data_DIR, LOG_FILENAME)
 
 # ========== 设置日志 ==========
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(log_path, encoding='utf-8'),  # 输出到文件
+        # logging.FileHandler(log_path, encoding='utf-8'),  # 输出到文件
         logging.StreamHandler()                      # 同时输出到控制台
     ]
 )
@@ -74,8 +74,6 @@ def export_to_csv():
         if os.path.exists(export_path):
             logging.warning(f"文件已存在，停止导出: {export_path}")
             return None
-
-
 
         with open(export_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)

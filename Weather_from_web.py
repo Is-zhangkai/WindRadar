@@ -5,11 +5,14 @@
 @File           ：Weather_from_web.py
 @Author         ：zhangkai
 @Date           ：2026/4/25 17:22 
-@Version        : 1.0.0
-@Description    : 从动态网页抓取信息
-@Record         :260425--从动态网页抓取信息
-                 260427--获取数据量较大，保存原始数据时只保留有用数据，增加删除数据库列函数2个
+@Version        : 1.2.0
+@Description    : 从动态网页抓取信息，保存到数据库和csv文件
+@Record         : 260425--从动态网页抓取信息
+                  260427--获取数据量较大，保存原始数据时只保留有用数据，增加删除数据库列函数2个
+                  260506--完善请求头，修改数据库表名为变量
 
+@Issue          : 260425--导出csv函数未测试，请使用export_csv.py
+                  260506--修改表名为变量后，未测试2个删除数据库列函数
 """
 
 import requests
@@ -22,27 +25,41 @@ import threading
 import os
 
 # ========== 配置 ==========
-
-CITY_ID = "Z_0101160303_S441"            # 城市ID
-
 INTERVAL = 1800  # 采集间隔（秒）
 
 # 最美天气API接口
-API_BASE_URL = "https://h5-api.zuimeitianqi.com/h5zh/api/pc"
-ACTUAL_URL = f"{API_BASE_URL}/actual?cityId={CITY_ID}"  # 实时天气+空气质量+预报
+"""
+从网页抓取url，网页接口可能发生变化
+网页：https://www.zuimeitianqi.com/#/index?picType=1&cityCode=Z_0101160303_S441
+URL：https://h5-api.zuimeitianqi.com/h5zh/api/pc//actual?cityId=Z_0101160303_S441
+"""
+CITY_ID = "Z_0101160303_S441"            # 城市ID
+# API_BASE_URL = "https://h5-api.zuimeitianqi.com/h5zh/api/pc"
+ACTUAL_URL = f"https://h5-api.zuimeitianqi.com/h5zh/api/pc/actual?cityId={CITY_ID}"
 
-# 请求头
+# 完善请求头，防止被屏蔽
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     "Referer": "https://www.zuimeitianqi.com/",
+    "Origin": "https://www.zuimeitianqi.com",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-site",
 }
 
+# 当前使用的数据表名
+CURRENT_TABLE = "weather_records_20260507"
+"""
+weather_records             ：20260425 18:04——20260430 11:04，间隔半小时,229条数据
+weather_records_20260507    ：202605 18:04——202605 11:04，间隔半小时
+"""
 # 数据保存路径
 Data_DIR = "weather_data_zmtq"  # 文件目录
 os.makedirs(Data_DIR, exist_ok=True)  # 确保目录存在
 DB_FILENAME = "weather_data_zmtq.db"       # SQLite数据库文件路径
-CSV_FILENAME = "weather_records_zmtq.csv"  # CSV文件名
+CSV_FILENAME = f"{CURRENT_TABLE}_zmtq.csv"  # CSV文件名
 LOG_FILENAME = "weather_fetcher_zmtq.log"  # 日志文件名
 DB_PATH = os.path.join(Data_DIR, DB_FILENAME)
 csv_path = os.path.join(Data_DIR, CSV_FILENAME)
@@ -60,13 +77,17 @@ logging.basicConfig(
 
 
 # ========== 初始化数据库 ==========
-def init_db():
+def init_db(table_name=None):
+    """根据表名创建对应的表结构，如果不指定则使用 CURRENT_TABLE"""
+    if table_name is None:
+        table_name = CURRENT_TABLE
+
     """创建SQLite数据表（如果不存在）"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("PRAGMA auto_vacuum = FULL")
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS weather_records (
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS {table_name} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
 
             fetch_time TEXT NOT NULL,      -- 采集时间（ISO格式）
@@ -99,9 +120,9 @@ def init_db():
     logging.info(f"数据保存目录: {Data_DIR}")
 
 
-# ========== 获取天气和空气质量数据（一站式） ==========
+# ========== 获取天气和空气质量数据（最美天气） ==========
 def fetch_all_data():
-    """从最美天气API获取实时天气和空气质量数据"""
+    """从最美天气获取实时天气和空气质量数据"""
     try:
         response = requests.get(ACTUAL_URL, headers=headers, timeout=15)
         response.raise_for_status()
@@ -173,8 +194,8 @@ def save_to_db(weather_data, air_quality_data):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute('''
-        INSERT INTO weather_records 
+    cursor.execute(f'''
+        INSERT INTO {CURRENT_TABLE} 
         (fetch_time, text, obsTime, temp, feels_like, humidity, 
          wind_speed, wind_dir, wind360, windScale, pressure, visibility,
          aqi, pm2p5, pm10, no2, o3, co, raw_response)
@@ -204,7 +225,7 @@ def save_to_db(weather_data, air_quality_data):
     conn.commit()
 
     # 获取并打印当前总记录数
-    cursor.execute("SELECT COUNT(*) FROM weather_records")
+    cursor.execute(f"SELECT COUNT(*) FROM {CURRENT_TABLE}")
     total = cursor.fetchone()[0]
     conn.close()
 
@@ -283,12 +304,12 @@ def export_to_csv():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute('''
+    cursor.execute(f'''
         SELECT 
             id, fetch_time, text, obsTime, temp, feels_like, humidity,
             wind_speed, wind_dir, wind360, windScale, pressure, visibility,
             aqi, pm2p5, pm10, no2, o3, co
-        FROM weather_records 
+        FROM {CURRENT_TABLE} 
         ORDER BY fetch_time
     ''')
     rows = cursor.fetchall()
@@ -318,7 +339,7 @@ def clear_raw_response_columns():
     cursor = conn.cursor()
 
     # 将两列的值全部设为 NULL
-    cursor.execute("UPDATE weather_records SET raw_response = NULL")
+    cursor.execute(f"UPDATE {CURRENT_TABLE}  SET raw_response = NULL")
 
     conn.commit()
     conn.close()
@@ -330,7 +351,7 @@ def keep_recent_raw_response(n=100):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     # 获取总记录数
-    cursor.execute("SELECT COUNT(*) FROM weather_records")
+    cursor.execute(f"SELECT COUNT(*) FROM {CURRENT_TABLE} ")
     total = cursor.fetchone()[0]
     if total <= n:
         logging.info(f"总记录数({total})不超过保留数({n})，无需清理")
@@ -342,7 +363,7 @@ def keep_recent_raw_response(n=100):
 
     # 方法：找到需要保留的最小 id
     cursor.execute(f'''
-        SELECT id FROM weather_records 
+        SELECT id FROM {CURRENT_TABLE}  
         ORDER BY id DESC 
         LIMIT 1 OFFSET {keep_count - 1}
     ''')
@@ -350,8 +371,8 @@ def keep_recent_raw_response(n=100):
     if result:
         min_keep_id = result[0]
         # 将 id < min_keep_id 的记录的 raw_response 设为 NULL
-        cursor.execute('''
-                       UPDATE weather_records
+        cursor.execute(f'''
+                       UPDATE {CURRENT_TABLE} 
                        SET raw_response = NULL
                        WHERE id < ?
                        ''', (min_keep_id,))
@@ -383,7 +404,7 @@ def main():
         data_time = datetime.now().replace(microsecond=0)
         logging.info(f"执行采集: {data_time}")
 
-        # 获取数据（一次性获取天气和空气质量）
+        # 获取数据
         weather_data, air_quality_data = fetch_all_data()
 
         if weather_data or air_quality_data:
