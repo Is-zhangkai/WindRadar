@@ -2,11 +2,14 @@
 # -*- coding: UTF-8 -*-
 """
 @Project        ：WindRadar
-@File           ：weather_fetcher.py
+@File           ：weather_hefeng.py
 @Author         ：zhangkai
 @Date           ：2026-04-23
-@Version        : 1.0.0
+@Version        : 2.0.0
 @Description    : 通过和风天气API获取天气和空气质量，保存到数据库和csv
+@Record         : 20260506--修改数据库表名为变量
+
+@Issue          :
 """
 
 import requests
@@ -40,12 +43,26 @@ air_url = f"{API_HOST}/airquality/v1/current/{LATITUDE}/{LONGITUDE}"
 params = {"location": LOCATION}
 headers = {"X-QW-Api-Key": API_KEY}
 
+
+# 当前使用的数据表名，改名修改这里(数据库表名,-log,csv文件名)
+# CURRENT_TABLE = "weather_records_20260508"
+# 按日期命名
+today = datetime.now().strftime("%Y%m%d")
+CURRENT_TABLE=f"weather_records_{today}"
+"""
+weather_records             ：20260423 18:27——20260430 11:08，间隔1小时,216条数据
+weather_records_2026050    ：202605 18:04——202605 11:04，间隔1小时, 条数据
+"""
 # 数据保存路径
 Data_DIR = "weather_data"  # 文件目录
+# log_dir = os.path.join(Data_DIR, "log")
+
 os.makedirs(Data_DIR, exist_ok=True)# 确保目录存在
+# os.makedirs(log_dir, exist_ok=True)          # 如果目录不存在则创建
 DB_FILENAME = "weather_data.db"      # SQLite数据库文件路径
-CSV_FILENAME = "weather_records260425.csv"  # CSV文件名（按日期分文件可修改）
-LOG_FILENAME = "weather_fetcher.log"  # CSV文件名（按日期分文件可修改）
+CSV_FILENAME = f"{CURRENT_TABLE}.csv"  # CSV文件名
+# LOG_FILENAME = f"{CURRENT_TABLE}.log"  # log文件名
+LOG_FILENAME = "weather_fetcher.log"  # 日志文件名
 DB_PATH=os.path.join(Data_DIR, DB_FILENAME)
 csv_path = os.path.join(Data_DIR, CSV_FILENAME)
 log_path = os.path.join(Data_DIR, LOG_FILENAME)
@@ -75,8 +92,8 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("PRAGMA auto_vacuum = FULL")
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS weather_records (
+    cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS {CURRENT_TABLE}  (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
 
             fetch_time TEXT NOT NULL,      -- 采集时间（ISO格式）
@@ -212,8 +229,8 @@ def save_to_db(weather_data, air_quality_data):
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO weather_records 
+    cursor.execute(f'''
+        INSERT INTO {CURRENT_TABLE}  
         (fetch_time, text, obsTime, temp, feels_like, humidity, 
          wind_speed, wind_dir,wind360, windScale, pressure, visibility,
          aqi, pm2p5, pm10, no2, o3, co,
@@ -244,7 +261,7 @@ def save_to_db(weather_data, air_quality_data):
     conn.commit()
 
     # 获取并打印当前总记录数
-    cursor.execute("SELECT COUNT(*) FROM weather_records")
+    cursor.execute(f"SELECT COUNT(*) FROM {CURRENT_TABLE} ")
     total = cursor.fetchone()[0]
 
     conn.close()
@@ -323,7 +340,7 @@ def save_to_csv(weather_data, air_quality_data):
     except Exception as e:
         logging.error(f"CSV写入失败: {e}")
 
-# ========== 导出为CSV ==========此程序未完成
+# ========== 导出为CSV ==========此程序待修改
 def export_to_csv():
     #手动调用时导出数据到CSV文件（覆盖模式）
 
@@ -332,12 +349,12 @@ def export_to_csv():
     cursor = conn.cursor()
 
     # 使用最新的字段列表
-    cursor.execute('''
+    cursor.execute(f'''
         SELECT 
             id, fetch_time, text, obsTime, temp, feels_like, humidity,
             wind_speed, wind_dir, wind360, windScale, pressure, visibility,
             aqi, pm2p5, pm10, no2, o3, co
-        FROM weather_records 
+        FROM {CURRENT_TABLE}  
         ORDER BY fetch_time
     ''')
     rows = cursor.fetchall()

@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 """
 @Project        ：WindRadar 
-@File           ：Weather_from_web.py
+@File           ：Weather_zuimei.py
 @Author         ：zhangkai
 @Date           ：2026/4/25 17:22 
 @Version        : 1.2.0
@@ -25,7 +25,7 @@ import threading
 import os
 
 # ========== 配置 ==========
-INTERVAL = 1800  # 采集间隔（秒）
+INTERVAL = 3600  # 采集间隔（秒）
 
 # 最美天气API接口
 """
@@ -50,10 +50,14 @@ headers = {
 }
 
 # 当前使用的数据表名
-CURRENT_TABLE = "weather_records_20260507"
+# CURRENT_TABLE = "weather_records_20260508"
+
+# 按日期命名
+today = datetime.now().strftime("%Y%m%d")
+CURRENT_TABLE=f"weather_records_{today}"
 """
 weather_records             ：20260425 18:04——20260430 11:04，间隔半小时,229条数据
-weather_records_20260507    ：202605 18:04——202605 11:04，间隔半小时
+weather_records_2026050    ：202605 18:04——202605 11:04，间隔1小时
 """
 # 数据保存路径
 Data_DIR = "weather_data_zmtq"  # 文件目录
