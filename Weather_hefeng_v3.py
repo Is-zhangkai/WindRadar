@@ -2,7 +2,7 @@
 # -*- coding: UTF-8 -*-
 """
 @Project        ：WindRadar
-@File           ：weather_hefeng.py
+@File           ：Weather_hefeng_v3.py
 @Author         ：zhangkai
 @Date           ：2026-05-08
 @Version        : 3.0.0

@@ -2,14 +2,11 @@
 # -*- coding: UTF-8 -*-
 """
 @Project        ：WindRadar
-@File           ：weather_hefeng.py
+@File           ：weather_hefeng_v1.py
 @Author         ：zhangkai
 @Date           ：2026-04-23
-@Version        : 2.0.0
+@Version        : 1.0.0
 @Description    : 通过和风天气API获取天气和空气质量，保存到数据库和csv
-@Record         : 20260506--修改数据库表名为变量
-
-@Issue          :
 """
 
 import requests
@@ -20,50 +17,34 @@ import signal
 import csv
 import threading
 import os
-from zoneinfo import ZoneInfo
+
 # ========== 配置==========
 # 经纬度配置
-LATITUDE = "43.85"                        # 纬度
-LONGITUDE = "125.41"                      # 经度
+LATITUDE = "43.85"  # 纬度
+LONGITUDE = "125.41"  # 经度
 LOCATION = f"{LONGITUDE},{LATITUDE}"
 
-INTERVAL = 3600  # 采集间隔（秒）
+INTERVAL = 1800  # 采集间隔（秒）
 
 # 和风天气API接口
 API_HOST = "https://kw3v5an2q7.re.qweatherapi.com"
 API_KEY = "d1b303e61b474dfbb17a1bb7a72bac5a"  # API Key
 # 实时天气接口
-url = f"{API_HOST}/v7/weather/now" #实时天气
-url_grid = f"{API_HOST}/v7/grid-weather/now" #格点实时天气
-
-
+url = f"{API_HOST}/v7/weather/now"  # 实时天气
+url_grid = f"{API_HOST}/v7/grid-weather/now"  # 格点实时天气
 
 # 空气质量接口    注意：URL中的经纬度顺序是 纬度/经度
 air_url = f"{API_HOST}/airquality/v1/current/{LATITUDE}/{LONGITUDE}"
 params = {"location": LOCATION}
 headers = {"X-QW-Api-Key": API_KEY}
 
-
-# 当前使用的数据表名，改名修改这里(数据库表名,-log,csv文件名)
-# CURRENT_TABLE = "weather_records_20260508"
-# 按日期命名
-today = datetime.now().strftime("%Y%m%d")
-CURRENT_TABLE=f"weather_records_{today}"
-"""
-weather_records             ：20260423 18:27——20260430 11:08，间隔1小时,216条数据
-weather_records_2026050    ：202605 18:04——202605 11:04，间隔1小时, 条数据
-"""
 # 数据保存路径
 Data_DIR = "weather_data"  # 文件目录
-# log_dir = os.path.join(Data_DIR, "log")
-
-os.makedirs(Data_DIR, exist_ok=True)# 确保目录存在
-# os.makedirs(log_dir, exist_ok=True)          # 如果目录不存在则创建
-DB_FILENAME = "weather_data.db"      # SQLite数据库文件路径
-CSV_FILENAME = f"{CURRENT_TABLE}.csv"  # CSV文件名
-# LOG_FILENAME = f"{CURRENT_TABLE}.log"  # log文件名
-LOG_FILENAME = "weather_fetcher.log"  # 日志文件名
-DB_PATH=os.path.join(Data_DIR, DB_FILENAME)
+os.makedirs(Data_DIR, exist_ok=True)  # 确保目录存在
+DB_FILENAME = "weather_data.db"  # SQLite数据库文件路径
+CSV_FILENAME = "weather_records.csv"  # CSV文件名（按日期分文件可修改）
+LOG_FILENAME = "weather_fetcher.log"  # CSV文件名（按日期分文件可修改）
+DB_PATH = os.path.join(Data_DIR, DB_FILENAME)
 csv_path = os.path.join(Data_DIR, CSV_FILENAME)
 log_path = os.path.join(Data_DIR, LOG_FILENAME)
 
@@ -73,9 +54,10 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(log_path, encoding='utf-8'),  # 输出到文件
-        logging.StreamHandler()                      # 同时输出到控制台
+        logging.StreamHandler()  # 同时输出到控制台
     ]
 )
+
 
 # ========== CSV文件配置 ==========
 # 按日期新建文件
@@ -91,48 +73,49 @@ def init_db():
     """创建SQLite数据表（如果不存在）"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("PRAGMA auto_vacuum = FULL")
-    cursor.execute(f'''
-        CREATE TABLE IF NOT EXISTS {CURRENT_TABLE}  (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cursor.execute('''
+                   CREATE TABLE IF NOT EXISTS weather_records
+                   (
+                       id               INTEGER PRIMARY KEY AUTOINCREMENT,
 
-            fetch_time TEXT NOT NULL,      -- 采集时间（ISO格式）
-            text TEXT,                  -- 天气描述
-            obsTime TEXT,                  -- 数据观测时间
-            temp TEXT,                     -- 温度
-            feels_like TEXT,               -- 体感温度
-            humidity TEXT,                 -- 相对湿度，百分比数值
-            wind_speed TEXT,               -- 风速
-            wind_dir TEXT,                 -- 风向
-            wind360 TEXT,                  -- 风向角
-            windScale TEXT,                -- 风力等级
-            pressure TEXT,                 -- 气压 默认单位：百帕
-            visibility TEXT,               -- 能见度默认单位：公里
+                       fetch_time       TEXT NOT NULL, -- 采集时间（ISO格式）
+                       text             TEXT,          -- 天气描述
+                       obsTime          TEXT,          -- 数据观测时间
+                       temp             TEXT,          -- 温度
+                       feels_like       TEXT,          -- 体感温度
+                       humidity         TEXT,          -- 相对湿度，百分比数值
+                       wind_speed       TEXT,          -- 风速
+                       wind_dir         TEXT,          -- 风向
+                       wind360          TEXT,          -- 风向角
+                       windScale        TEXT,          -- 风力等级
+                       pressure         TEXT,          -- 气压 默认单位：百帕
+                       visibility       TEXT,          -- 能见度默认单位：公里
 
-            -- 空气质量数据（新增）
-            aqi REAL,                 -- AQI指数
-            
-            -- 污染物浓度（新增）
-            pm2p5 REAL,                    -- PM2.5浓度 (μg/m3)
-            pm10 REAL,                     -- PM10浓度 (μg/m3)
-            no2 REAL,                      -- 二氧化氮浓度 (ppb)
-            o3 REAL,                       -- 臭氧浓度 (ppb)
-            co REAL,                       -- 一氧化碳浓度 (ppm)
+                       -- 空气质量数据（新增）
+                       aqi              REAL,          -- AQI指数
 
-            raw_response_w TEXT,              -- 天气原始返回数据（备用）
-            raw_response_aqi TEXT               -- 空气质量原始返回数据（备用）
-        )
-    ''')
+                       -- 污染物浓度（新增）
+                       pm2p5            REAL,          -- PM2.5浓度 (μg/m3)
+                       pm10             REAL,          -- PM10浓度 (μg/m3)
+                       no2              REAL,          -- 二氧化氮浓度 (ppb)
+                       o3               REAL,          -- 臭氧浓度 (ppb)
+                       co               REAL,          -- 一氧化碳浓度 (ppm)
+
+                       raw_response_w   TEXT,          -- 天气原始返回数据（备用）
+                       raw_response_aqi TEXT           -- 空气质量原始返回数据（备用）
+                   )
+                   ''')
     conn.commit()
     conn.close()
     logging.info("数据库初始化完成")
     logging.info(f"文件保存目录:{os.path.join(Data_DIR, CSV_FILENAME)} ")
 
+
 # ========== 获取天气数据 ==========
 def fetch_weather():
     """从和风天气API获取实时数据"""
     try:
-        response = requests.get(url_grid, headers=headers, params=params, timeout=10)
+        response = requests.get(url, headers=headers, params=params, timeout=10)
         data = response.json()
 
         if data.get("code") == "200":
@@ -140,13 +123,9 @@ def fetch_weather():
             logging.info(f"获取成功 - 天气: {now.get('text')}，温度: {now.get('temp')}°C")
             # logging.info(f"数据页面 - :{data.get('fxLink')}")
 
-            # 转换时区
-            cst_time = (datetime.fromisoformat(now.get("obsTime"))).astimezone(ZoneInfo("Asia/Shanghai"))
-
             return {
-                "text": now.get("text"),#天气描述
-                # "obsTime":datetime.fromisoformat((now.get("obsTime")).replace('+00:00', '')) + timedelta(hours=8),
-                "obsTime":cst_time.isoformat(),
+                "text": now.get("text"),  # 天气描述
+                "obsTime": now.get("obsTime"),
                 "temp": now.get("temp"),
                 "feels_like": now.get("feelsLike"),
                 "humidity": now.get("humidity"),
@@ -156,7 +135,7 @@ def fetch_weather():
                 "wind_scale": now.get("windScale"),
                 "pressure": now.get("pressure"),
                 "visibility": now.get("vis"),
-                "raw_response_w": str(data)#天气原始返回数据（备用）
+                "raw_response_w": str(data)  # 天气原始返回数据（备用）
             }
         else:
             logging.error(f"API返回错误码: {data.get('code')}")
@@ -168,6 +147,7 @@ def fetch_weather():
     except Exception as e:
         logging.error(f"未知错误: {e}")
         return None
+
 
 # ========== 获取空气质量数据 ==========
 def fetch_air_quality():
@@ -229,39 +209,39 @@ def save_to_db(weather_data, air_quality_data):
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute(f'''
-        INSERT INTO {CURRENT_TABLE}  
-        (fetch_time, text, obsTime, temp, feels_like, humidity, 
-         wind_speed, wind_dir,wind360, windScale, pressure, visibility,
-         aqi, pm2p5, pm10, no2, o3, co,
-         raw_response_w, raw_response_aqi)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        datetime.now().isoformat(),
-        weather_data.get("text") if weather_data else None,
-        weather_data.get("obsTime") if weather_data else None,
-        weather_data.get("temp") if weather_data else None,
-        weather_data.get("feels_like") if weather_data else None,
-        weather_data.get("humidity") if weather_data else None,
-        weather_data.get("wind_speed") if weather_data else None,
-        weather_data.get("wind_dir") if weather_data else None,
-        weather_data.get("wind360") if weather_data else None,
-        weather_data.get("wind_scale") if weather_data else None,
-        weather_data.get("pressure") if weather_data else None,
-        weather_data.get("visibility") if weather_data else None,
-        air_quality_data.get("aqi") if air_quality_data else None,
-        air_quality_data.get("pm2p5") if air_quality_data else None,
-        air_quality_data.get("pm10") if air_quality_data else None,
-        air_quality_data.get("no2") if air_quality_data else None,
-        air_quality_data.get("o3") if air_quality_data else None,
-        air_quality_data.get("co") if air_quality_data else None,
-        weather_data.get("raw_response_w") if weather_data else None,
-        air_quality_data.get("raw_response_aqi") if air_quality_data else None
-    ))
+    cursor.execute('''
+                   INSERT INTO weather_records
+                   (fetch_time, text, obsTime, temp, feels_like, humidity,
+                    wind_speed, wind_dir, wind360, windScale, pressure, visibility,
+                    aqi, pm2p5, pm10, no2, o3, co,
+                    raw_response_w, raw_response_aqi)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ''', (
+                       datetime.now().isoformat(),
+                       weather_data.get("text") if weather_data else None,
+                       weather_data.get("obsTime") if weather_data else None,
+                       weather_data.get("temp") if weather_data else None,
+                       weather_data.get("feels_like") if weather_data else None,
+                       weather_data.get("humidity") if weather_data else None,
+                       weather_data.get("wind_speed") if weather_data else None,
+                       weather_data.get("wind_dir") if weather_data else None,
+                       weather_data.get("wind360") if weather_data else None,
+                       weather_data.get("wind_scale") if weather_data else None,
+                       weather_data.get("pressure") if weather_data else None,
+                       weather_data.get("visibility") if weather_data else None,
+                       air_quality_data.get("aqi") if air_quality_data else None,
+                       air_quality_data.get("pm2p5") if air_quality_data else None,
+                       air_quality_data.get("pm10") if air_quality_data else None,
+                       air_quality_data.get("no2") if air_quality_data else None,
+                       air_quality_data.get("o3") if air_quality_data else None,
+                       air_quality_data.get("co") if air_quality_data else None,
+                       weather_data.get("raw_response_w") if weather_data else None,
+                       air_quality_data.get("raw_response_aqi") if air_quality_data else None
+                   ))
     conn.commit()
 
     # 获取并打印当前总记录数
-    cursor.execute(f"SELECT COUNT(*) FROM {CURRENT_TABLE} ")
+    cursor.execute("SELECT COUNT(*) FROM weather_records")
     total = cursor.fetchone()[0]
 
     conn.close()
@@ -275,6 +255,7 @@ def save_to_db(weather_data, air_quality_data):
     else:
         logging.error("无数据可保存")
 
+
 # ========== 浮点数保留两位小数 ==========
 def safe_float(value, decimals=2):
     """安全转换为浮点数并保留两位小数"""
@@ -284,6 +265,7 @@ def safe_float(value, decimals=2):
         return round(float(value), decimals)
     except (ValueError, TypeError):
         return value
+
 
 # ========== 保存到csv ==========
 def save_to_csv(weather_data, air_quality_data):
@@ -340,23 +322,39 @@ def save_to_csv(weather_data, air_quality_data):
     except Exception as e:
         logging.error(f"CSV写入失败: {e}")
 
-# ========== 导出为CSV ==========此程序待修改
+
+# ========== 导出为CSV ==========此程序未完成
 def export_to_csv():
-    #手动调用时导出数据到CSV文件（覆盖模式）
+    """手动调用时导出数据到CSV文件（覆盖模式）"""
 
     os.makedirs(Data_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # 使用最新的字段列表
-    cursor.execute(f'''
-        SELECT 
-            id, fetch_time, text, obsTime, temp, feels_like, humidity,
-            wind_speed, wind_dir, wind360, windScale, pressure, visibility,
-            aqi, pm2p5, pm10, no2, o3, co
-        FROM {CURRENT_TABLE}  
-        ORDER BY fetch_time
-    ''')
+    cursor.execute('''
+                   SELECT id,
+                          fetch_time,
+                          text,
+                          obsTime,
+                          temp,
+                          feels_like,
+                          humidity,
+                          wind_speed,
+                          wind_dir,
+                          wind360,
+                          windScale,
+                          pressure,
+                          visibility,
+                          aqi,
+                          pm2p5,
+                          pm10,
+                          no2,
+                          o3,
+                          co
+                   FROM weather_records
+                   ORDER BY fetch_time
+                   ''')
     rows = cursor.fetchall()
     conn.close()
 
@@ -377,11 +375,15 @@ def export_to_csv():
     else:
         logging.warning("数据库无数据，无法导出")
 
+
 # ========== 退出处理 ==========
 stop_event = threading.Event()
+
+
 def signal_handler(sig, frame):
     stop_event.set()  # 立即唤醒等待
     logging.info("收到退出信号，正在优雅退出...")
+
 
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
 signal.signal(signal.SIGTERM, signal_handler)  # 终止信号
@@ -389,16 +391,16 @@ signal.signal(signal.SIGTERM, signal_handler)  # 终止信号
 
 # ========== 主循环 ==========
 def main():
-    logging.info(f"程序启动，采集间隔:{INTERVAL // 3600}时{(INTERVAL % 3600) // 60}分")
+    logging.info(f"天气采集程序启动，采集间隔:{(INTERVAL % 3600) // 60}分钟）")
     init_db()
 
     # 循环采集
     while not stop_event.is_set():
         # 获取数据
         data_time = datetime.now().replace(microsecond=0)
-        logging.info(f"获取天气数据 - 执行时间: {data_time}")
+        logging.info(f"获取天气数据 - 时间: {data_time}")
         weather_data = fetch_weather()
-        air_quality_data= fetch_air_quality()
+        air_quality_data = fetch_air_quality()
         # 保存文件
         save_to_db(weather_data, air_quality_data)
         save_to_csv(weather_data, air_quality_data)
@@ -407,6 +409,7 @@ def main():
             break  # 收到退出信号
 
     logging.info("程序正常退出")
+
 
 if __name__ == "__main__":
     main()
